@@ -1,3 +1,20 @@
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Environment Variables (API açarının sızmaması üçün MÜTLƏQDİR)
 .env
 
-env/
+# Python Bytecode / Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE / Redaktor faylları
+.vscode/
+.idea/
+
+# Əməliyyat sistemi faylları
+.DS_Store
+Thumbs.db
