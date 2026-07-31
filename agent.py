@@ -5,19 +5,33 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from tools import get_current_location, get_weather_by_city, convert_celsius_to_fahrenheit
 
+# .env faylından dəyişənləri yükləyirik
 load_dotenv()
 
 class ExecutableToolAgent:
     """
-    Tool-ları dinamik icra edən və nəticəni LLM-ə qaytararaq 
-    təbii dildə yekun cavab generasiya edən Agent.
+    Tool-ları dinamik icra edən, model parametrlərini .env faylından oxuyan 
+    və nəticəni LLM-ə qaytararaq təbii dildə yekun cavab generasiya edən Agent.
     """
-    def __init__(self, model_name: str = "gpt-4o-mini"):
+    def __init__(self, model_name: str = None, base_url: str = None):
         self.tools = [get_current_location, get_weather_by_city, convert_celsius_to_fahrenheit]
-        # Tool adlarını onların obyekti ilə uyğunlaşdıran map
         self.tools_by_name = {tool.name: tool for tool in self.tools}
         
-        self.llm = ChatOpenAI(model=model_name, temperature=0)
+        # Prioritet: Kodda verilən parametr > .env faylındakı dəyər > Susmaya görə (default) dəyər
+        selected_model = model_name or os.getenv("MODEL_NAME", "gpt-4o-mini")
+        selected_base_url = base_url or os.getenv("MODEL_BASE_URL", None)
+        
+        # LLM parametrlərinin dinamik konfiqurasiyası
+        llm_kwargs = {
+            "model": selected_model,
+            "temperature": 0
+        }
+        
+        # Əgər .env-də custom base_url varsa, onu əlavə edirik
+        if selected_base_url:
+            llm_kwargs["base_url"] = selected_base_url
+            
+        self.llm = ChatOpenAI(**llm_kwargs)
         self.llm_with_tools = self.llm.bind_tools(self.tools)
 
     def run(self, user_query: str) -> str:
@@ -61,7 +75,6 @@ class ExecutableToolAgent:
 if __name__ == "__main__":
     agent = ExecutableToolAgent()
     
-    # Test sorğusu
     query = "London şəhərində hava necədir?"
     print(f"İstifadəçi sorğusu: {query}")
     print("-" * 50)
