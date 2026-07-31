@@ -8,22 +8,55 @@ from tools import get_current_location, get_weather_by_city, convert_celsius_to_
 # .env faylından mühit dəyişənlərini yükləyirik
 load_dotenv()
 
-class SafeLoopAgent:
+class AgentLogger:
     """
-    Sonsuz dövrə və nəzarətsiz API xərclərinə qarşı maksimum təkrarlanma 
-    limiti (Max Iteration Guardrail) ilə qorunan Agent sinfi.
+    Agent-in reasoning (düşüncə), tool çağırışı və observation (nəticə) 
+    addımlarını terminalda aydın loglayan köməkçi sinif.
     """
-    def __init__(self, model_name: str = None, base_url: str = None, max_iterations: int = None):
+    @staticmethod
+    def log_step(step: int, reasoning: str):
+        print(f"\n--- [ADDIM {step}] ---")
+        if reasoning:
+            print(f"[THOUGHT / REASONING]: {reasoning}")
+
+    @staticmethod
+    def log_tool_call(tool_name: str, args: dict):
+        print(f"[ACTION / TOOL CALL]: '{tool_name}' | Parametrlər: {args}")
+
+    @staticmethod
+    def log_observation(output: str):
+        print(f"[OBSERVATION / RESULT]: {output}")
+
+    @staticmethod
+    def log_final_response(response: str):
+        print(f"\n[FINAL RESPONSE]:\n{response}\n" + "=" * 60)
+
+
+class TraceableAgent:
+    """
+    Bütün reasoning və tool-calling izlərini aydın loglayan 
+    və parametrləri .env faylından oxuyan Agent sinfi.
+    """
+    def __init__(
+        self, 
+        model_name: str = None, 
+        base_url: str = None, 
+        max_iterations: int = None,
+        verbose: bool = None
+    ):
         self.tools = [get_current_location, get_weather_by_city, convert_celsius_to_fahrenheit]
         self.tools_by_name = {tool.name: tool for tool in self.tools}
         
-        # Bütün parametr konfiqurasiyaları .env faylından oxunur
+        # Bütün konfiqurasiyalar .env faylından oxunur
         selected_model = model_name or os.getenv("MODEL_NAME", "gpt-4o-mini")
         selected_base_url = base_url or os.getenv("MODEL_BASE_URL", None)
         
         env_max_iter = os.getenv("MAX_ITERATIONS", "5")
         self.max_iterations = max_iterations or int(env_max_iter)
         
+        env_verbose = os.getenv("VERBOSE_LOGGING", "True").lower() in ("true", "1", "yes")
+        self.verbose = verbose if verbose is not None else env_verbose
+
         llm_kwargs = {
             "model": selected_model,
             "temperature": 0
@@ -36,25 +69,37 @@ class SafeLoopAgent:
 
     def run(self, user_query: str) -> str:
         """
-        Maksimum dövr nəzarəti (Infinite Loop Guardrail) ilə sorğunu icra edir.
+        Sorğunu icra edir və debug üçün hər bir addımın izini (trace) loglayır.
         """
         messages = [HumanMessage(content=user_query)]
         iterations = 0
+
+        if self.verbose:
+            print(f"\n[SORĞU BAŞLADI]: '{user_query}'")
 
         while iterations < self.max_iterations:
             iterations += 1
             ai_msg = self.llm_with_tools.invoke(messages)
             messages.append(ai_msg)
 
-            # Əgər LLM tool çağırmaq istəyirsə:
+            if self.verbose:
+                AgentLogger.log_step(iterations, ai_msg.content)
+
+            # Əgər tool çağırışı varsa:
             if ai_msg.tool_calls:
                 for tool_call in ai_msg.tool_calls:
                     tool_name = tool_call["name"]
                     tool_args = tool_call["args"]
                     tool_call_id = tool_call["id"]
 
+                    if self.verbose:
+                        AgentLogger.log_tool_call(tool_name, tool_args)
+
                     selected_tool = self.tools_by_name[tool_name]
                     tool_output = selected_tool.invoke(tool_args)
+
+                    if self.verbose:
+                        AgentLogger.log_observation(str(tool_output))
 
                     messages.append(
                         ToolMessage(
@@ -63,25 +108,23 @@ class SafeLoopAgent:
                         )
                     )
             else:
-                # Zəncir uğurla bitdikdə və LLM yekun cavabı verdikdə
+                # Yekun cavab alındıqda
+                if self.verbose:
+                    AgentLogger.log_final_response(ai_msg.content)
                 return ai_msg.content
 
-        # Əgər MAX_ITERATIONS limitinə çatılarsa (Sonsuz dövrün qarşısını almaq üçün məcburi dayandırma)
-        return (
+        warning_msg = (
             f"[XƏBƏRDARLIQ] Təhlükəsizlik limiti: Maksimum təkrarlanma limitinə ({self.max_iterations}) çatıldı! "
-            "Sonsuz dövrün və nəzarətsiz API xərclərinin qarşısını almaq üçün agent prosesi nəzarətli şəkildə saxladı."
+            "Agent sonsuz dövrün qarşısını almaq üçün nəzarətli şəkildə dayandırıldı."
         )
+        if self.verbose:
+            print(f"\n⚠️ {warning_msg}")
+        return warning_msg
 
 
 if __name__ == "__main__":
-    # Test: Qəsdən aşağı limit (max_iterations=1) qoyaraq qoruma sistemini test edirik
-    test_agent = SafeLoopAgent(max_iterations=1)
+    agent = TraceableAgent()
     
-    # 2 addım tələb edən sorğu göndəririk ki, 1-ci adımda limitə çatıb qorumanı işə salsın
-    query = "London üçün hava necədir və bunu Fahrenheit-ə çevir?"
-    print(f"Test Sorğusu: {query}")
-    print(f"Təyin olunmuş Max Iteration: 1")
-    print("-" * 50)
-    
-    response = test_agent.run(query)
-    print(f"Agent Cavabı:\n{response}")
+    # Reasoning və Execution trace-i görmək üçün zəncirvari test sorğusu
+    query = "Harada olduğuma görə hava necədir, sonra bu dərəcəni Fahrenheit-ə çevir."
+    agent.run(query)
