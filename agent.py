@@ -32,6 +32,11 @@ SEÇİM QAYDALARI (Trick Check):
 - Hava + Fahrenheit sorğusu → üç addım: location → weather → convert.
 - Məlumat əldə etməzdən əvvəl tool çağırmağa ehtiyac yoxdursa, tool çağırma; birbaşa cavab ver."""
 
+# ==========================================
+# GUARDRAIL: Sonsuz dövr qoruması
+# ==========================================
+MAX_ITERATIONS = 5
+
 # .env faylından mühit dəyişənlərini yükləyirik
 load_dotenv()
 
@@ -78,8 +83,14 @@ class TraceableAgent:
         selected_model = model_name or os.getenv("MODEL_NAME", "gpt-4o-mini")
         selected_base_url = base_url or os.getenv("MODEL_BASE_URL", None)
         
-        env_max_iter = os.getenv("MAX_ITERATIONS", "5")
-        self.max_iterations = max_iterations or int(env_max_iter)
+        env_max_iter = os.getenv("MAX_ITERATIONS", str(MAX_ITERATIONS))
+        try:
+            env_max_iter_value = int(env_max_iter)
+        except ValueError:
+            env_max_iter_value = MAX_ITERATIONS
+        self.max_iterations = max_iterations or env_max_iter_value
+        if self.max_iterations < 1:
+            self.max_iterations = MAX_ITERATIONS
         
         env_verbose = os.getenv("VERBOSE_LOGGING", "True").lower() in ("true", "1", "yes")
         self.verbose = verbose if verbose is not None else env_verbose
@@ -162,8 +173,10 @@ class TraceableAgent:
                 return ai_msg.content
 
         warning_msg = (
-            f"[XƏBƏRDARLIQ] Təhlükəsizlik limiti: Maksimum təkrarlanma limitinə ({self.max_iterations}) çatıldı! "
-            "Agent sonsuz dövrün qarşısını almaq üçün nəzarətli şəkildə dayandırıldı."
+            f"Üzr istəyirik! Sorğunuzu həll etmək üçün lazım olan addımların sayı "
+            f"təhlükəsizlik limitini ({self.max_iterations} iterasiya) keçdi. "
+            "Agent sonsuz dövrə düşməmək və nəzarətsiz API xərclərinin qarşısını "
+            "almaq üçün nəzarətli şəkildə dayandırıldı."
         )
         if self.verbose:
             print(f"\n⚠️ {warning_msg}")
