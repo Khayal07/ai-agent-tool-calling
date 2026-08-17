@@ -20,5 +20,9 @@ def main():
     print("\n>>> TEST 3: Ümumi Bilik Sorğusu (Tool çağırılmamalıdır)")
     agent.run("Süni intellekt nədir?")
 
+    # TEST 4: Şəhər Əsaslı Zəncirvari Sorğu (Geocoding -> Hava -> Çevrilmə)
+    print("\n>>> TEST 4: Şəhər Zənciri (Geocoding -> Hava -> Fahrenheit)")
+    agent.run("Parijdə hazırda temperatur neçə dərəcədir, Fahrenheit vahidi ilə cavab ver?")
+
 if __name__ == "__main__":
     main()
