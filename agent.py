@@ -2,8 +2,34 @@ import os
 from typing import List, Dict, Any
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
-from tools import get_current_location, get_weather_by_city, convert_celsius_to_fahrenheit
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
+from tools import (
+    get_current_location,
+    get_weather_by_coordinates,
+    convert_celsius_to_fahrenheit,
+)
+
+# ==========================================
+# SİSTEM PROMPTU: Tool seçimi qaydaları
+# ==========================================
+SYSTEM_PROMPT = """Sən bir AI Agent'sən. İstifadəçinin sorğusunu analiz edib ən uyğun tool-u seçirsən və ya birbaşa cavab verirsən.
+
+MÖVCUD TOOL-LAR:
+1. get_current_location(city=None) — Məkan koordinatlarını alır.
+   - İstifadəçi 'burada', 'haradayam', 'cari yerimdə' kimi ifadə işlədibsə: HEÇ BİR parametr olmadan çağır (IP ünvanına görə işləyir).
+   - İstifadəçi konkret şəhər adı çəkibsə (məsələn 'Parijdə hava necədir?'): həmin şəhəri 'city' parametri ilə ötür (geocoding).
+2. get_weather_by_coordinates(latitude, longitude) — Verilmiş koordinatlardakı havanı °C ilə qaytarır.
+   - YALNIZ `get_current_location` nəticəsindən koordinatlar məlum olduqda çağır. Koordinatları heç vaxt özün təxmin etmə!
+3. convert_celsius_to_fahrenheit(celsius) — °C-ni °F-ə çevirir.
+   - YALNIZ istifadəçi açıq şəkildə Fahrenheit-ə çevrilmə istədikdə çağır.
+
+SEÇİM QAYDALARI (Trick Check):
+- Ümumi bilik/mühakimə sorğuları ('Süni intellekt nədir?', '2+2 neçədir?', tarix sualları) tool TƏLƏB ETMİR → birbaşa qısa, aydın cavab ver.
+- Yalnız çevrilmə sorğusu ('30 dərəcə Selsi neçə Fahrenheit edir?') → YALNIZ convert tool-u; hava tool-u çağırma.
+- Şəhər + hava sorğusu ('Bakıda hava necədir?') → get_current_location(city='Baku') → get_weather_by_coordinates.
+- Cari yer + hava sorğusu ('burada hava necədir?') → get_current_location() → get_weather_by_coordinates.
+- Hava + Fahrenheit sorğusu → üç addım: location → weather → convert.
+- Məlumat əldə etməzdən əvvəl tool çağırmağa ehtiyac yoxdursa, tool çağırma; birbaşa cavab ver."""
 
 # .env faylından mühit dəyişənlərini yükləyirik
 load_dotenv()
@@ -44,7 +70,7 @@ class TraceableAgent:
         max_iterations: int = None,
         verbose: bool = None
     ):
-        self.tools = [get_current_location, get_weather_by_city, convert_celsius_to_fahrenheit]
+        self.tools = [get_current_location, get_weather_by_coordinates, convert_celsius_to_fahrenheit]
         self.tools_by_name = {tool.name: tool for tool in self.tools}
         
         # Bütün konfiqurasiyalar .env faylından oxunur
@@ -71,7 +97,7 @@ class TraceableAgent:
         """
         Sorğunu icra edir və debug üçün hər bir addımın izini (trace) loglayır.
         """
-        messages = [HumanMessage(content=user_query)]
+        messages = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=user_query)]
         iterations = 0
 
         if self.verbose:
