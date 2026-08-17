@@ -42,26 +42,36 @@ load_dotenv()
 
 class AgentLogger:
     """
-    Agent-in reasoning (düşüncə), tool çağırışı və observation (nəticə) 
-    addımlarını terminalda aydın loglayan köməkçi sinif.
+    Agent-in reasoning (düşüncə), tool çağırışı və observation (nəticə)
+    addımlarını strukturlaşdırılmış formada terminala loglayan köməkçi sinif.
+
+    Format: [Iteration X] Model Thought -> Tool Selected -> Arguments -> Tool Output
     """
     @staticmethod
-    def log_step(step: int, reasoning: str):
-        print(f"\n--- [ADDIM {step}] ---")
-        if reasoning:
-            print(f"[THOUGHT / REASONING]: {reasoning}")
+    def _format_args(args: dict) -> str:
+        if not args:
+            return "{}"
+        return ", ".join(f"{key}={value}" for key, value in args.items())
 
     @staticmethod
-    def log_tool_call(tool_name: str, args: dict):
-        print(f"[ACTION / TOOL CALL]: '{tool_name}' | Parametrlər: {args}")
+    def log_iteration(
+        step: int,
+        reasoning: str,
+        tool_name: str = None,
+        args: dict = None,
+        output: str = None,
+    ):
+        line = f"[Iteration {step}] Model Thought: {reasoning if reasoning else '(yoxdur)'}"
+        if tool_name:
+            line += f" -> Tool Selected: {tool_name} -> Arguments: {AgentLogger._format_args(args)}"
+        if output is not None:
+            line += f" -> Tool Output: {output}"
+        print(line)
 
     @staticmethod
-    def log_observation(output: str):
-        print(f"[OBSERVATION / RESULT]: {output}")
-
-    @staticmethod
-    def log_final_response(response: str):
-        print(f"\n[FINAL RESPONSE]:\n{response}\n" + "=" * 60)
+    def log_final_response(step: int, response: str):
+        print(f"[Iteration {step}] Final Answer: {response}")
+        print("=" * 60)
 
 
 class TraceableAgent:
@@ -120,18 +130,12 @@ class TraceableAgent:
             ai_msg = self.llm_with_tools.invoke(messages)
             messages.append(ai_msg)
 
-            if self.verbose:
-                AgentLogger.log_step(iterations, ai_msg.content)
-
             # Əgər tool çağırışı varsa:
             if ai_msg.tool_calls:
                 for tool_call in ai_msg.tool_calls:
                     tool_name = tool_call["name"]
                     tool_args = tool_call["args"]
                     tool_call_id = tool_call["id"]
-
-                    if self.verbose:
-                        AgentLogger.log_tool_call(tool_name, tool_args)
 
                     try:
                         selected_tool = self.tools_by_name[tool_name]
@@ -158,7 +162,9 @@ class TraceableAgent:
                         )
 
                     if self.verbose:
-                        AgentLogger.log_observation(result_payload)
+                        AgentLogger.log_iteration(
+                            iterations, ai_msg.content, tool_name, tool_args, result_payload
+                        )
 
                     messages.append(
                         ToolMessage(
@@ -169,7 +175,7 @@ class TraceableAgent:
             else:
                 # Yekun cavab alındıqda
                 if self.verbose:
-                    AgentLogger.log_final_response(ai_msg.content)
+                    AgentLogger.log_final_response(iterations, ai_msg.content)
                 return ai_msg.content
 
         warning_msg = (
