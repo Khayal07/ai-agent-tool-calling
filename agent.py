@@ -3,6 +3,7 @@ from typing import List, Dict, Any
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, SystemMessage
+from pydantic import ValidationError
 from tools import (
     get_current_location,
     get_weather_by_coordinates,
@@ -121,15 +122,36 @@ class TraceableAgent:
                     if self.verbose:
                         AgentLogger.log_tool_call(tool_name, tool_args)
 
-                    selected_tool = self.tools_by_name[tool_name]
-                    tool_output = selected_tool.invoke(tool_args)
+                    try:
+                        selected_tool = self.tools_by_name[tool_name]
+                        tool_output = selected_tool.invoke(tool_args)
+                        result_payload = (
+                            f"[TOOL OUTPUT] Tool: '{tool_name}' | Nəticə: {tool_output}"
+                        )
+                    except KeyError:
+                        result_payload = (
+                            f"[TOOL ERROR] '{tool_name}' tool-u mövcud deyil. "
+                            f"Mövcud tool-lar: {', '.join(self.tools_by_name.keys())}."
+                        )
+                    except ValidationError as exc:
+                        result_payload = (
+                            f"[TOOL ERROR] '{tool_name}' tool-u üçün parametrlər yanlışdır: {exc}."
+                        )
+                    except (ConnectionError, RuntimeError, ValueError, TimeoutError) as exc:
+                        result_payload = (
+                            f"[TOOL ERROR] '{tool_name}' tool-u icra edilərkən xəta baş verdi: {exc}."
+                        )
+                    except Exception as exc:
+                        result_payload = (
+                            f"[TOOL ERROR] '{tool_name}' tool-u gözlənilməz xəta ilə qarşılaşdı: {exc}."
+                        )
 
                     if self.verbose:
-                        AgentLogger.log_observation(str(tool_output))
+                        AgentLogger.log_observation(result_payload)
 
                     messages.append(
                         ToolMessage(
-                            content=str(tool_output),
+                            content=result_payload,
                             tool_call_id=tool_call_id
                         )
                     )
